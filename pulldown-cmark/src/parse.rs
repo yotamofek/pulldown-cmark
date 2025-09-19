@@ -1249,10 +1249,10 @@ impl<'input> ParserInner<'input> {
                 }
             }
             if c == b'&' {
-                if let (n, Some(value)) = scan_entity(&bytes[i..]) {
+                if let (n, Some(value)) = scan_entity(&bytes[i + 1..]) {
                     title.push_str(&text[mark..i]);
                     title.push_str(&value);
-                    i += n;
+                    i += n + 1;
                     mark = i;
                     continue;
                 }
@@ -1454,7 +1454,7 @@ impl<'input> ParserInner<'input> {
             let (span, i) = scan_html_block_inner(
                 // Subtract 1 to include the < character
                 &bytes[(ix - 1)..],
-                Some(&|bytes| skip_container_prefixes(&self.tree, bytes, self.options)),
+                Some(|bytes| skip_container_prefixes(&self.tree, bytes, self.options)),
             )?;
             Some((span, i + ix - 1))
         }

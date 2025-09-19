@@ -436,7 +436,7 @@ fn is_ascii_alpha(c: u8) -> bool {
 }
 
 fn is_ascii_alphanumeric(c: u8) -> bool {
-    matches!(c, b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z')
+    c.is_ascii_alphanumeric()
 }
 
 fn is_ascii_letterdigitdash(c: u8) -> bool {
@@ -456,18 +456,14 @@ fn is_valid_unquoted_attr_value_char(c: u8) -> bool {
 
 // scan a single character
 pub(crate) fn scan_ch(data: &[u8], c: u8) -> usize {
-    if !data.is_empty() && data[0] == c {
-        1
-    } else {
-        0
-    }
+    usize::from(data.first() == Some(&c))
 }
 
 pub(crate) fn scan_while<F>(data: &[u8], mut f: F) -> usize
 where
     F: FnMut(u8) -> bool,
 {
-    data.iter().take_while(|&&c| f(c)).count()
+    data.iter().position(|&c| !f(c)).unwrap_or(data.len())
 }
 
 pub(crate) fn scan_rev_while<F>(data: &[u8], mut f: F) -> usize
@@ -903,9 +899,9 @@ fn char_from_codepoint(input: usize) -> Option<char> {
     char::from_u32(codepoint)
 }
 
-// doesn't bother to check data[0] == '&'
+// assumes data is preceeded by '&'
 pub(crate) fn scan_entity(bytes: &[u8]) -> (usize, Option<CowStr<'static>>) {
-    let mut end = 1;
+    let mut end = 0;
     if bytes.get(end) == Some(&b'#') {
         end += 1;
         let (bytecount, codepoint) = if end < bytes.len() && bytes[end] | 0x20 == b'x' {
@@ -926,7 +922,7 @@ pub(crate) fn scan_entity(bytes: &[u8]) -> (usize, Option<CowStr<'static>>) {
     }
     end += scan_while(&bytes[end..], is_ascii_alphanumeric);
     if bytes.get(end) == Some(&b';') {
-        if let Some(value) = entities::get_entity(&bytes[1..end]) {
+        if let Some(value) = entities::get_entity(&bytes[..end]) {
             return (end + 1, Some(value.into()));
         }
     }
@@ -1023,27 +1019,34 @@ fn scan_attribute_name(data: &[u8]) -> Option<usize> {
 /// Returns the index immediately following the attribute on success.
 /// The argument `buffer_ix` refers to the index into `data` from which we
 /// should copy into `buffer` when we find bytes to skip.
-fn scan_attribute(
-    data: &[u8],
+#[inline]
+fn scan_attribute<'a>(
+    data: &'a [u8],
     mut ix: usize,
-    newline_handler: Option<&dyn Fn(&[u8]) -> usize>,
+    newline_handler: Option<impl Fn(&'a [u8]) -> usize>,
     buffer: &mut Vec<u8>,
     buffer_ix: &mut usize,
 ) -> Option<usize> {
     ix += scan_attribute_name(&data[ix..])?;
     let ix_after_attribute = ix;
-    ix = scan_whitespace_with_newline_handler_without_buffer(data, ix, newline_handler)?;
+    ix = scan_whitespace_with_newline_handler_without_buffer(data, ix, newline_handler.as_ref())?;
     if data.get(ix) == Some(&b'=') {
         ix = scan_whitespace_with_newline_handler(
             data,
             ix_after_attribute,
-            newline_handler,
+            newline_handler.as_ref(),
             buffer,
             buffer_ix,
         )?;
         ix += 1;
-        ix = scan_whitespace_with_newline_handler(data, ix, newline_handler, buffer, buffer_ix)?;
-        ix = scan_attribute_value(data, ix, newline_handler, buffer, buffer_ix)?;
+        ix = scan_whitespace_with_newline_handler(
+            data,
+            ix,
+            newline_handler.as_ref(),
+            buffer,
+            buffer_ix,
+        )?;
+        ix = scan_attribute_value(data, ix, newline_handler.as_ref(), buffer, buffer_ix)?;
         Some(ix)
     } else {
         // Leave whitespace for next attribute.
@@ -1054,10 +1057,11 @@ fn scan_attribute(
 /// Scans whitespace and possibly newlines according to the
 /// behavior defined by the newline handler. When bytes are skipped,
 /// all preceding non-skipped bytes are pushed to the buffer.
-fn scan_whitespace_with_newline_handler(
-    data: &[u8],
+#[inline]
+fn scan_whitespace_with_newline_handler<'a>(
+    data: &'a [u8],
     mut i: usize,
-    newline_handler: Option<&dyn Fn(&[u8]) -> usize>,
+    newline_handler: Option<impl Fn(&'a [u8]) -> usize>,
     buffer: &mut Vec<u8>,
     buffer_ix: &mut usize,
 ) -> Option<usize> {
@@ -1066,7 +1070,7 @@ fn scan_whitespace_with_newline_handler(
             return Some(i);
         }
         if let Some(eol_bytes) = scan_eol(&data[i..]) {
-            let handler = newline_handler?;
+            let handler = newline_handler.as_ref()?;
             i += eol_bytes;
             let skipped_bytes = handler(&data[i..]);
 
@@ -1091,17 +1095,18 @@ fn scan_whitespace_with_newline_handler(
 /// copy skipped data into a buffer. Typically, if this function
 /// returns `Some`, a call to `scan_whitespace_with_newline_handler` will
 /// soon follow.
-fn scan_whitespace_with_newline_handler_without_buffer(
-    data: &[u8],
+#[inline]
+fn scan_whitespace_with_newline_handler_without_buffer<'a>(
+    data: &'a [u8],
     mut i: usize,
-    newline_handler: Option<&dyn Fn(&[u8]) -> usize>,
+    newline_handler: Option<impl Fn(&'a [u8]) -> usize>,
 ) -> Option<usize> {
     while i < data.len() {
         if !is_ascii_whitespace(data[i]) {
             return Some(i);
         }
         if let Some(eol_bytes) = scan_eol(&data[i..]) {
-            let handler = newline_handler?;
+            let handler = newline_handler.as_ref()?;
             i += eol_bytes;
             let skipped_bytes = handler(&data[i..]);
             i += skipped_bytes;
@@ -1114,10 +1119,11 @@ fn scan_whitespace_with_newline_handler_without_buffer(
 }
 
 /// Returns the index immediately following the attribute value on success.
-fn scan_attribute_value(
-    data: &[u8],
+#[inline]
+fn scan_attribute_value<'a>(
+    data: &'a [u8],
     mut i: usize,
-    newline_handler: Option<&dyn Fn(&[u8]) -> usize>,
+    newline_handler: Option<impl Fn(&'a [u8]) -> usize>,
     buffer: &mut Vec<u8>,
     buffer_ix: &mut usize,
 ) -> Option<usize> {
@@ -1129,7 +1135,7 @@ fn scan_attribute_value(
                     return Some(i + 1);
                 }
                 if let Some(eol_bytes) = scan_eol(&data[i..]) {
-                    let handler = newline_handler?;
+                    let handler = newline_handler.as_ref()?;
                     i += eol_bytes;
                     let skipped_bytes = handler(&data[i..]);
 
@@ -1180,11 +1186,11 @@ pub(crate) fn unescape<'a, I: Into<CowStr<'a>>>(input: I, is_in_table: bool) -> 
                 mark = i + 1;
                 i += 2;
             }
-            [b'&', ..] => match scan_entity(&bytes[i..]) {
+            [b'&', ref rest @ ..] => match scan_entity(rest) {
                 (n, Some(value)) => {
                     result.push_str(&input[mark..i]);
                     result.push_str(&value);
-                    i += n;
+                    i += n + 1;
                     mark = i;
                 }
                 _ => i += 1,
@@ -1205,24 +1211,30 @@ pub(crate) fn unescape<'a, I: Into<CowStr<'a>>>(input: I, is_in_table: bool) -> 
     }
 }
 
+fn split_once_inclusive<F>(s: &[u8], mut pred: F) -> Option<(&[u8], &[u8])>
+where
+    F: FnMut(u8) -> bool,
+{
+    let index = s.iter().position(|&c| pred(c))?;
+    Some(s.split_at(index))
+}
+
 /// Assumes `data` is preceded by `<`.
 pub(crate) fn starts_html_block_type_6(data: &[u8]) -> bool {
     let i = scan_ch(data, b'/');
     let tail = &data[i..];
-    let n = scan_while(tail, is_ascii_alphanumeric);
-    if !is_html_tag(&tail[..n]) {
+    let (tag, tail) =
+        split_once_inclusive(tail, |c| !c.is_ascii_alphanumeric()).unwrap_or((tail, &[]));
+    if !is_html_tag(tag) {
         return false;
     }
     // Starting condition says the next byte must be either a space, a tab,
     // the end of the line, the string >, or the string />
-    let tail = &tail[n..];
     tail.is_empty()
-        || tail[0] == b' '
-        || tail[0] == b'\t'
-        || tail[0] == b'\r'
-        || tail[0] == b'\n'
-        || tail[0] == b'>'
-        || tail.len() >= 2 && &tail[..2] == b"/>"
+        || tail
+            .first()
+            .is_some_and(|&c| c == b' ' || c == b'\t' || c == b'\r' || c == b'\n' || c == b'>')
+        || tail.starts_with(b"/>")
 }
 
 fn is_html_tag(tag: &[u8]) -> bool {
@@ -1251,7 +1263,7 @@ fn is_html_tag(tag: &[u8]) -> bool {
 pub(crate) fn scan_html_type_7(data: &[u8]) -> Option<usize> {
     // Block type html does not allow for newlines, so we
     // do not pass a newline handler.
-    let (_span, i) = scan_html_block_inner(data, None)?;
+    let (_span, i) = scan_html_block_inner(data, None::<&dyn Fn(&[u8]) -> usize>)?;
     scan_blank_line(&data[i..])?;
     Some(i)
 }
@@ -1263,9 +1275,10 @@ pub(crate) fn scan_html_type_7(data: &[u8]) -> Option<usize> {
 /// multiple leafs (e.g. over multiple lines in a blockquote),
 /// the html is returned as a vector of bytes.
 /// If no bytes were skipped, the buffer will be empty.
-pub(crate) fn scan_html_block_inner(
-    data: &[u8],
-    newline_handler: Option<&dyn Fn(&[u8]) -> usize>,
+#[inline]
+pub(crate) fn scan_html_block_inner<'a>(
+    data: &'a [u8],
+    newline_handler: Option<impl Fn(&'a [u8]) -> usize>,
 ) -> Option<(Vec<u8>, usize)> {
     let mut buffer = Vec::new();
     let mut last_buf_index = 0;
@@ -1287,7 +1300,7 @@ pub(crate) fn scan_html_block_inner(
                     if eol_bytes == 0 {
                         return None;
                     }
-                    let handler = newline_handler?;
+                    let handler = newline_handler.as_ref()?;
                     i += eol_bytes;
                     let skipped_bytes = handler(&data[i..]);
 
@@ -1316,7 +1329,13 @@ pub(crate) fn scan_html_block_inner(
                 // No whitespace, which is mandatory.
                 return None;
             }
-            i = scan_attribute(data, i, newline_handler, &mut buffer, &mut last_buf_index)?;
+            i = scan_attribute(
+                data,
+                i,
+                newline_handler.as_ref(),
+                &mut buffer,
+                &mut last_buf_index,
+            )?;
         }
     }
 
