@@ -23,4 +23,4 @@ pulldown-cmark = { path = "../pulldown-cmark" }
 simd = [ "pulldown-cmark/simd" ]
 
 [dev-dependencies]
-criterion = "0.5.1"
+criterion = { package = "codspeed-criterion-compat", version = "*" }
