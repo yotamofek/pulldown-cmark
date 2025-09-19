@@ -456,11 +456,7 @@ fn is_valid_unquoted_attr_value_char(c: u8) -> bool {
 
 // scan a single character
 pub(crate) fn scan_ch(data: &[u8], c: u8) -> usize {
-    if !data.is_empty() && data[0] == c {
-        1
-    } else {
-        0
-    }
+    usize::from(data.first() == Some(&c))
 }
 
 pub(crate) fn scan_while<F>(data: &[u8], mut f: F) -> usize
@@ -1215,24 +1211,30 @@ pub(crate) fn unescape<'a, I: Into<CowStr<'a>>>(input: I, is_in_table: bool) -> 
     }
 }
 
+fn split_once_inclusive<F>(s: &[u8], mut pred: F) -> Option<(&[u8], &[u8])>
+where
+    F: FnMut(u8) -> bool,
+{
+    let index = s.iter().position(|&c| pred(c))?;
+    Some(s.split_at(index))
+}
+
 /// Assumes `data` is preceded by `<`.
 pub(crate) fn starts_html_block_type_6(data: &[u8]) -> bool {
     let i = scan_ch(data, b'/');
     let tail = &data[i..];
-    let n = scan_while(tail, is_ascii_alphanumeric);
-    if !is_html_tag(&tail[..n]) {
+    let (tag, tail) =
+        split_once_inclusive(tail, |c| !c.is_ascii_alphanumeric()).unwrap_or((tail, &[]));
+    if !is_html_tag(tag) {
         return false;
     }
     // Starting condition says the next byte must be either a space, a tab,
     // the end of the line, the string >, or the string />
-    let tail = &tail[n..];
     tail.is_empty()
-        || tail[0] == b' '
-        || tail[0] == b'\t'
-        || tail[0] == b'\r'
-        || tail[0] == b'\n'
-        || tail[0] == b'>'
-        || tail.len() >= 2 && &tail[..2] == b"/>"
+        || tail
+            .first()
+            .is_some_and(|&c| c == b' ' || c == b'\t' || c == b'\r' || c == b'\n' || c == b'>')
+        || tail.starts_with(b"/>")
 }
 
 fn is_html_tag(tag: &[u8]) -> bool {
