@@ -1454,7 +1454,7 @@ impl<'input> ParserInner<'input> {
             let (span, i) = scan_html_block_inner(
                 // Subtract 1 to include the < character
                 &bytes[(ix - 1)..],
-                Some(&|bytes| skip_container_prefixes(&self.tree, bytes, self.options)),
+                Some(|bytes| skip_container_prefixes(&self.tree, bytes, self.options)),
             )?;
             Some((span, i + ix - 1))
         }
