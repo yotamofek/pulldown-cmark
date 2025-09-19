@@ -1023,6 +1023,7 @@ fn scan_attribute_name(data: &[u8]) -> Option<usize> {
 /// Returns the index immediately following the attribute on success.
 /// The argument `buffer_ix` refers to the index into `data` from which we
 /// should copy into `buffer` when we find bytes to skip.
+#[inline]
 fn scan_attribute<'a>(
     data: &'a [u8],
     mut ix: usize,
@@ -1060,6 +1061,7 @@ fn scan_attribute<'a>(
 /// Scans whitespace and possibly newlines according to the
 /// behavior defined by the newline handler. When bytes are skipped,
 /// all preceding non-skipped bytes are pushed to the buffer.
+#[inline]
 fn scan_whitespace_with_newline_handler<'a>(
     data: &'a [u8],
     mut i: usize,
@@ -1097,6 +1099,7 @@ fn scan_whitespace_with_newline_handler<'a>(
 /// copy skipped data into a buffer. Typically, if this function
 /// returns `Some`, a call to `scan_whitespace_with_newline_handler` will
 /// soon follow.
+#[inline]
 fn scan_whitespace_with_newline_handler_without_buffer<'a>(
     data: &'a [u8],
     mut i: usize,
@@ -1120,6 +1123,7 @@ fn scan_whitespace_with_newline_handler_without_buffer<'a>(
 }
 
 /// Returns the index immediately following the attribute value on success.
+#[inline]
 fn scan_attribute_value<'a>(
     data: &'a [u8],
     mut i: usize,
@@ -1269,6 +1273,7 @@ pub(crate) fn scan_html_type_7(data: &[u8]) -> Option<usize> {
 /// multiple leafs (e.g. over multiple lines in a blockquote),
 /// the html is returned as a vector of bytes.
 /// If no bytes were skipped, the buffer will be empty.
+#[inline]
 pub(crate) fn scan_html_block_inner<'a>(
     data: &'a [u8],
     newline_handler: Option<impl Fn(&'a [u8]) -> usize>,
