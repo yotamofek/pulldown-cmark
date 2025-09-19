@@ -1249,10 +1249,10 @@ impl<'input> ParserInner<'input> {
                 }
             }
             if c == b'&' {
-                if let (n, Some(value)) = scan_entity(&bytes[i..]) {
+                if let (n, Some(value)) = scan_entity(&bytes[i + 1..]) {
                     title.push_str(&text[mark..i]);
                     title.push_str(&value);
-                    i += n;
+                    i += n + 1;
                     mark = i;
                     continue;
                 }

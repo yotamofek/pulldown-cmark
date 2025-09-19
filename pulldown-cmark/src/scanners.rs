@@ -436,7 +436,7 @@ fn is_ascii_alpha(c: u8) -> bool {
 }
 
 fn is_ascii_alphanumeric(c: u8) -> bool {
-    matches!(c, b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z')
+    c.is_ascii_alphanumeric()
 }
 
 fn is_ascii_letterdigitdash(c: u8) -> bool {
@@ -899,9 +899,9 @@ fn char_from_codepoint(input: usize) -> Option<char> {
     char::from_u32(codepoint)
 }
 
-// doesn't bother to check data[0] == '&'
+// assumes data is preceeded by '&'
 pub(crate) fn scan_entity(bytes: &[u8]) -> (usize, Option<CowStr<'static>>) {
-    let mut end = 1;
+    let mut end = 0;
     if bytes.get(end) == Some(&b'#') {
         end += 1;
         let (bytecount, codepoint) = if end < bytes.len() && bytes[end] | 0x20 == b'x' {
@@ -922,7 +922,7 @@ pub(crate) fn scan_entity(bytes: &[u8]) -> (usize, Option<CowStr<'static>>) {
     }
     end += scan_while(&bytes[end..], is_ascii_alphanumeric);
     if bytes.get(end) == Some(&b';') {
-        if let Some(value) = entities::get_entity(&bytes[1..end]) {
+        if let Some(value) = entities::get_entity(&bytes[..end]) {
             return (end + 1, Some(value.into()));
         }
     }
@@ -1186,11 +1186,11 @@ pub(crate) fn unescape<'a, I: Into<CowStr<'a>>>(input: I, is_in_table: bool) -> 
                 mark = i + 1;
                 i += 2;
             }
-            [b'&', ..] => match scan_entity(&bytes[i..]) {
+            [b'&', ref rest @ ..] => match scan_entity(rest) {
                 (n, Some(value)) => {
                     result.push_str(&input[mark..i]);
                     result.push_str(&value);
-                    i += n;
+                    i += n + 1;
                     mark = i;
                 }
                 _ => i += 1,
