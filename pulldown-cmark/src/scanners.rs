@@ -463,7 +463,7 @@ pub(crate) fn scan_while<F>(data: &[u8], mut f: F) -> usize
 where
     F: FnMut(u8) -> bool,
 {
-    data.iter().take_while(|&&c| f(c)).count()
+    data.iter().position(|&c| !f(c)).unwrap_or(data.len())
 }
 
 pub(crate) fn scan_rev_while<F>(data: &[u8], mut f: F) -> usize
